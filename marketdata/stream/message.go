@@ -3,6 +3,7 @@ package stream
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"sync"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -1059,11 +1060,20 @@ var subMessageHandler = func(c *client, s subscriptions) error {
 	return nil
 }
 
+// handleSubscriptionMessage parses the server's subscription confirmation.
+//
+// The overnight feed has a known server-side quirk: the msgpack map header
+// declares more fields than are actually present in the wire data (e.g. declares
+// 9 pairs but only encodes 3). We handle this by breaking on io.EOF instead of
+// treating it as an error.
 func (c *client) handleSubscriptionMessage(d *msgpack.Decoder, n int) error {
 	s := subscriptions{}
 	for i := 0; i < n; i++ {
 		key, err := d.DecodeString()
 		if err != nil {
+			if err == io.EOF {
+				break // server declared more fields than it encoded (overnight feed quirk)
+			}
 			return err
 		}
 		switch key {
